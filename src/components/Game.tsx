@@ -3,6 +3,19 @@ import { useEffect, useRef, useState } from 'react';
 import { ConvexProvider, useConvex, useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Player } from './Player';
+import { Id } from '../../convex/_generated/dataModel';
+import { listConversations } from '../../convex/chat';
+import { getWorld } from '../../convex/players';
+
+const handlePlayerClick = (playerID: Id<'players'>, conversations: any) => {
+  // This function will be called when the Player component is clicked
+  console.log('conversations', conversations);
+  console.log('Player component clicked!', playerID);
+};
+
+export const useConversations = (worldId: Id<'worlds'>) => {
+  return useQuery(api.chat.listConversations, { worldId });
+};
 
 export const Game = () => {
   const convex = useConvex();
@@ -11,13 +24,19 @@ export const Game = () => {
   if (!worldState) return null;
   const { world, players } = worldState;
   console.log('worldId', world._id);
+
   return (
     <Stage width={1200} height={800} options={{ backgroundColor: 0xffffff }}>
       <ConvexProvider client={convex}>
         {players
           // .slice(0, 1)
           .map((player) => (
-            <Player key={player._id} player={player} offset={offset} />
+            <Player
+              onClick={() => handlePlayerClick(player._id, conversations)}
+              key={player._id}
+              player={player}
+              offset={offset}
+            />
           ))}
       </ConvexProvider>
     </Stage>
