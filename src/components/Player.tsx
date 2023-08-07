@@ -4,12 +4,24 @@ import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { getPoseFromMotion } from '../../convex/lib/physics';
 import { Doc } from '../../convex/_generated/dataModel';
-import { Pose } from '../../convex/types';
+import { Player as PlayerState, Pose } from '../../convex/types';
 import { Character } from './Character';
 
 const SpeechDurationMs = 3000;
 
-export const Player = ({ player, offset }: { player: Doc<'players'>; offset: number }) => {
+export type SelectPlayer = (playerState: PlayerState) => void;
+
+export const Player = ({
+  player,
+  offset,
+  tileDim,
+  onClick,
+}: {
+  player: Doc<'players'>;
+  offset: number;
+  tileDim: number;
+  onClick: SelectPlayer;
+}) => {
   const playerState = useQuery(api.players.playerState, {
     playerId: player._id,
   });
@@ -29,13 +41,20 @@ export const Player = ({ player, offset }: { player: Doc<'players'>; offset: num
   if (!pose) return null;
   return (
     <Character
-      pose={pose}
-      isMoving={playerState.motion.type === 'walking'}
+      x={pose.position.x * tileDim + tileDim / 2}
+      y={pose.position.y * tileDim + tileDim / 2}
+      orientation={pose.orientation}
+      isMoving={
+        playerState.motion.type === 'walking' && playerState.motion.targetEndTs >= time.current
+      }
       isThinking={playerState.thinking}
       isSpeaking={(playerState.lastSpokeTs ?? 0) > time.current - SpeechDurationMs}
       textureUrl={character.textureUrl}
       spritesheetData={character.spritesheetData}
       speed={character.speed}
+      onClick={() => {
+        onClick(playerState);
+      }}
     />
   );
 };

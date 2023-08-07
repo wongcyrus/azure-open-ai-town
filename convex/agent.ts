@@ -8,9 +8,8 @@ import { Doc, Id } from './_generated/dataModel';
 
 import { internalAction } from './_generated/server';
 import { MemoryDB } from './lib/memory';
-import { Message } from './lib/openai';
 import { Snapshot, Action, Position, Worlds, EntryOfType } from './types';
-import { converse, startConversation, walkAway } from './conversation';
+import { chatHistoryFromMessages, converse, startConversation, walkAway } from './conversation';
 
 export type ActionAPI = (action: Action) => Promise<Doc<'journal'> | null>;
 // 1. The engine kicks off this action.
@@ -47,9 +46,8 @@ export async function agentLoop(
   actionAPI: ActionAPI,
   world: Doc<'worlds'>,
 ) {
-  const imWalkingHere = player.motion.type === 'walking';
+  const imWalkingHere = player.motion.type === 'walking' && player.motion.targetEndTs > Date.now();
   const newFriends = nearbyPlayers.filter((a) => a.new).map(({ player }) => player);
-  const othersThinking = newFriends.find((a) => a.thinking);
   const nearbyPlayerIds = nearbyPlayers.map(({ player }) => player.id);
   // Handle new observations
   //   Calculate scores
@@ -75,9 +73,12 @@ export async function agentLoop(
       await actionAPI({
         type: 'leaveConversation',
         conversationId: player.lastSpokeConversationId,
+        audience: nearbyPlayerIds,
       });
       await memory.rememberConversation(
+        player.name,
         player.id,
+        player.identity,
         player.lastSpokeConversationId,
         player.lastSpokeTs,
       );
@@ -85,12 +86,7 @@ export async function agentLoop(
   }
 
   for (const { conversationId, messages } of relevantConversations) {
-    const chatHistory: Message[] = [
-      ...messages.map((m) => ({
-        role: 'user' as const,
-        content: `${m.fromName} to ${m.toNames.join(',')}: ${m.content}\n`,
-      })),
-    ];
+    const chatHistory = chatHistoryFromMessages(messages);
     const shouldWalkAway = await walkAway(chatHistory, player);
     console.log('shouldWalkAway: ', shouldWalkAway);
 
@@ -98,8 +94,14 @@ export async function agentLoop(
     if (shouldWalkAway || messages.length >= 10) {
       // It's to chatty here, let's go somewhere else.
       if (!imWalkingHere) {
-        await actionAPI({ type: 'leaveConversation', conversationId });
-        await memory.rememberConversation(player.id, conversationId, player.lastSpokeTs);
+        await actionAPI({ type: 'leaveConversation', audience: nearbyPlayerIds, conversationId });
+        await memory.rememberConversation(
+          player.name,
+          player.id,
+          player.identity,
+          conversationId,
+          player.lastSpokeTs,
+        );
         if (await actionAPI({ type: 'travel', position: getRandomPosition(world) })) {
           return;
         }
@@ -115,7 +117,8 @@ export async function agentLoop(
       // display the chat via actionAPI
       await actionAPI({
         type: 'talking',
-        audience: nearbyPlayers.map(({ player }) => player.id),
+        // TODO: should we avoid talking to players in active conversation?
+        audience: nearbyPlayerIds,
         content: playerCompletion,
         conversationId: conversationId,
       });
@@ -143,6 +146,7 @@ export async function agentLoop(
     if (imWalkingHere) {
       await actionAPI({ type: 'stop' });
     }
+    const othersThinking = newFriends.find((a) => a.thinking);
     // Hey, new friends
     if (!othersThinking) {
       // Decide whether we want to talk
@@ -153,8 +157,11 @@ export async function agentLoop(
       })) as EntryOfType<'startConversation'>;
       if (conversationEntry) {
         // We won the race to start the conversation
-        const newFriendsNames = newFriends.map((a) => a.name);
-        const playerCompletion = await startConversation(newFriendsNames, memory, player);
+        const relationships = nearbyPlayers.map((a) => ({
+          name: a.player.name,
+          relationship: a.relationship,
+        }));
+        const playerCompletion = await startConversation(relationships, memory, player);
         await actionAPI({
           type: 'talking',
           audience: newFriends.map((a) => a.id),

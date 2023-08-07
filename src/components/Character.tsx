@@ -6,18 +6,23 @@ import { AnimatedSprite, Container, Text } from '@pixi/react';
 export const Character = ({
   textureUrl,
   spritesheetData,
-  pose,
+  x,
+  y,
+  orientation,
   isMoving = false,
   isThinking = false,
   isSpeaking = false,
   speed = 0.1,
+  onClick,
 }: {
   // Path to the texture packed image.
   textureUrl: string;
   // The data for the spritesheet.
   spritesheetData: ISpritesheetData;
   // The pose of the NPC.
-  pose: Pose;
+  x: number;
+  y: number;
+  orientation: number;
   isMoving?: boolean;
   // Shows a thought bubble if true.
   isThinking?: boolean;
@@ -25,6 +30,7 @@ export const Character = ({
   isSpeaking?: boolean;
   // The speed of the animation. Can be tuned depending on the side and speed of the NPC.
   speed?: number;
+  onClick: () => void;
 }) => {
   const [spriteSheet, setSpriteSheet] = useState<Spritesheet>();
   useEffect(() => {
@@ -39,12 +45,11 @@ export const Character = ({
   if (!spriteSheet) return null;
 
   // The first "left" is "right" but reflected.
-  const roundedOrientation = Math.round(pose.orientation / 90);
+  const roundedOrientation = Math.round(orientation / 90);
   const direction = ['left', 'up', 'left', 'down'][roundedOrientation];
 
-  const { x, y } = pose.position;
   return (
-    <Container x={x * 5} y={y * 5}>
+    <Container x={x} y={y} interactive={true} pointerdown={onClick}>
       {isThinking && (
         // TODO: We'll eventually have separate assets for thinking and speech animations.
         <Text x={-10} y={-10} scale={{ x: -0.5, y: 0.5 }} text={'💭'} anchor={{ x: 0.5, y: 0.5 }} />

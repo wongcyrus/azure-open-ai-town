@@ -3,17 +3,51 @@ import { Table } from './lib/utils';
 
 // Hierarchical location within tree
 // TODO: build zone lookup from position, whether player-dependent or global.
+// export const Zones = Table('zones', {
+//   mapId: v.id('maps'),
+//   name: v.string(),
+//   parent: v.id('zones'), // index of parent zone
+//   children: v.array(v.id('zones')), // index of children zones
+//   area:
+//     // v.union(
+//     //   // TODO: support polygons
+//     //   v.object({
+//     //     type: v.literal('polygon'),
+//     //     minX: v.number(),
+//     //     minY: v.number(),
+//     //     maxX: v.number(),
+//     //     maxY: v.number(),
+//     //     points: v.array(v.object({ x: v.number(), y: v.number() })),
+//     //   }),
+//     v.object({
+//       type: v.literal('rectangle'),
+//       x: v.number(),
+//       y: v.number(),
+//       width: v.number(),
+//       height: v.number(),
+//     }),
+//   // ),
+// });
 // export const zone = v.array(v.string());
 // export type Zone = Infer<typeof zone>;
 
 export const Worlds = Table('worlds', {
   // name: v.string(),
   // characterIds: v.array(v.id('characters')),
-  walls: v.array(v.array(v.number())),
-  tiledim: v.number(), // tile size in pixels (assume square)
-  width: v.number(),   // number of tiles wide 
-  height: v.number(), 
+  // TODO: remove these and instead have a Zone hierarchy
+  width: v.number(), // number of tiles wide
+  height: v.number(),
+  mapId: v.id('maps'),
   frozen: v.boolean(),
+});
+
+export const Maps = Table('maps', {
+  tileSetUrl: v.string(),
+  tileSetDim: v.number(), // Width & height of tileset image, px (assume square)
+  tileDim: v.number(), // tile size in pixels (assume square)
+  // An array of layers, which is a 2-d array of tile indices.
+  bgTiles: v.array(v.array(v.array(v.number()))),
+  objectTiles: v.array(v.array(v.number())),
 });
 
 export const Position = v.object({ x: v.number(), y: v.number() });
@@ -39,6 +73,7 @@ export const SaySomething = v.object({
 export const LeaveConversation = v.object({
   type: v.literal('leaveConversation'),
   conversationId: v.id('conversations'),
+  audience: v.array(v.id('players')),
 });
 
 export const Action = v.union(
@@ -64,10 +99,24 @@ export const Message = v.object({
   fromName: v.string(),
   to: v.array(v.id('players')),
   toNames: v.array(v.string()),
-  content: v.string(),
+  data: v.union(
+    v.object({
+      type: v.literal('started'),
+    }),
+    v.object({
+      type: v.literal('responded'),
+      content: v.string(),
+    }),
+    v.object({
+      type: v.literal('left'),
+    }),
+  ),
   ts: v.number(),
 });
 export type Message = Infer<typeof Message>;
+// export type ResponseMessage = Omit<Message, 'data'> & {
+//   data: Extract<Message['data'], { type: 'responded' }>;
+// };
 
 export const Stopped = v.object({
   type: v.literal('stopped'),
@@ -93,6 +142,8 @@ export const Player = v.object({
   identity: v.string(),
   motion: Motion,
   thinking: v.boolean(),
+  lastThinkTs: v.optional(v.number()),
+  lastThinkEndTs: v.optional(v.number()),
   lastSpokeTs: v.number(),
   lastSpokeConversationId: v.optional(v.id('conversations')),
 });
@@ -144,9 +195,6 @@ export const Journal = Table('journal', {
 
     // Exercises left to the reader:
 
-    // v.object({
-    //   type: v.literal('reflecting'),
-    // }),
     // v.object({
     //   type: v.literal('activity'),
     //   description: v.string(),

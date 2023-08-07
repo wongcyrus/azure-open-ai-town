@@ -5,16 +5,16 @@ import { internalAction, internalMutation, internalQuery } from './_generated/se
 import { getAgentSnapshot } from './engine';
 import { getAllPlayers } from './players';
 import { asyncMap } from './lib/utils';
-import { Action, Entry, EntryOfType } from './types';
+import { Action, Entry, EntryOfType, Motion, Player, Pose } from './types';
 import { clientMessageMapper } from './chat';
 import { MemoryDB } from './lib/memory';
-import { converse, startConversation, walkAway } from './conversation';
-import { Message } from './lib/openai';
+import { chatHistoryFromMessages, converse, startConversation, walkAway } from './conversation';
 
-export const debugAgentSnapshot = internalMutation({
+export const debugAgentSnapshotWithThinking = internalMutation({
   args: { playerId: v.id('players') },
   handler: async (ctx, { playerId }) => {
     const snapshot = await getAgentSnapshot(ctx, playerId);
+    // console.log('getAgentSnapshot', snapshot);
     const thinkId = await ctx.db.insert('journal', {
       playerId,
       data: {
@@ -35,12 +35,35 @@ export const getDebugPlayerIds = internalQuery({
   },
 });
 
+export const debugAllPlayerSnapshot = internalQuery({
+  args: {},
+  handler: async (ctx, args) => {
+    const players = await ctx.db.query('players').collect();
+    if (!players) return null;
+    let snapshots = [];
+    for (const player of players) {
+      const snapshot = await getAgentSnapshot(ctx, player._id);
+      console.log(snapshot);
+      snapshots.push(snapshot);
+    }
+    return snapshots;
+  },
+});
+
 export const debugPlayerSnapshot = internalQuery({
   args: {},
   handler: async (ctx, args) => {
     const player = await ctx.db.query('players').first();
     if (!player) return null;
     const snapshot = await getAgentSnapshot(ctx, player._id);
+    return snapshot;
+  },
+});
+
+export const debugPlayerIdSnapshot = internalQuery({
+  args: { playerId: v.id('players') },
+  handler: async (ctx, args) => {
+    const snapshot = await getAgentSnapshot(ctx, args.playerId);
     return snapshot;
   },
 });
@@ -71,29 +94,129 @@ export const debugListMessages = internalQuery({
   },
 });
 
-// For making conversations happen without walking around.
-export const runConversation = internalAction({
-  args: { numPlayers: v.optional(v.boolean()) },
+export const runAgentLoopClear = internalAction({
+  args: {
+    numberOfLoops: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
-    // To always clear all first:
     await ctx.runAction(internal.init.resetFrozen);
-    // To always make a new world:
-    // await ctx.runAction(internal.init.seed, { newWorld: true });
-    // To just run with the existing agents:
-    //await ctx.runAction(internal.init.seed, {});
+    await runAgentLoop(ctx, args);
+  },
+});
 
-    // Grabs the latest world
+export const runAgentLoop = internalAction({
+  args: {
+    numberOfLoops: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    console.log('Looping', args.numberOfLoops || 100);
     const { playerIds, world } = await ctx.runQuery(internal.testing.getDebugPlayerIds);
-    const memory = MemoryDB(ctx);
-    let done = false;
 
-    let firstTime = true;
-    let ourConversationId: Id<'conversations'> | null = null;
-    while (!done) {
-      for (const playerId of playerIds) {
-        const { snapshot, thinkId } = await ctx.runMutation(internal.testing.debugAgentSnapshot, {
+    let index = args.numberOfLoops || 100;
+    let randomX: number[] = [];
+    let displacement = 25;
+    for (let i = 0; i < playerIds.length; i++) {
+      randomX.push(displacement * i);
+    }
+
+    while (index-- != 0) {
+      for (const [playerIndex, playerId] of playerIds.entries()) {
+        // console.log('playerId', playerId);
+
+        // hacky way of geting agents at different location trigger as "new"
+        let x = index % 2 == 0 ? 0 : randomX[playerIndex];
+        // move them nearby each other
+        ctx.runMutation(internal.testing.movePlayer, { playerId, x: x, y: 0 });
+
+        const actionAPI = (action: Action) =>
+          ctx.runMutation(internal.engine.handleAgentAction, {
+            playerId,
+            action,
+            noSchedule: true,
+          });
+
+        const { snapshot, thinkId } = await ctx.runMutation(
+          internal.testing.debugAgentSnapshotWithThinking,
+          {
+            playerId,
+          },
+        );
+
+        // console.log("snapshot.nearbyPlayers", snapshot.nearbyPlayers)
+
+        // console.log('Run Agent Loop. Think ID', thinkId);
+        // run the loop
+        await ctx.runAction(internal.agent.runAgent, {
+          snapshot,
+          world,
+          thinkId,
+          noSchedule: true,
+        });
+
+        const afterSnapshot = await ctx.runQuery(internal.testing.debugPlayerIdSnapshot, {
           playerId,
         });
+        const { player } = afterSnapshot;
+
+        // console.log('AfterSnapshot.player.motion', player.motion);
+        // Agent Loop might make them move. stop them so they're likely to talk on next loop
+        if (player.motion.type === 'walking') {
+          // console.log("Stopping player")
+          await actionAPI({
+            type: 'stop',
+          });
+        }
+      }
+    }
+  },
+});
+
+export const movePlayer = internalMutation({
+  args: { playerId: v.id('players'), x: v.number(), y: v.number() },
+  handler: async (ctx, args) => {
+    const motion = {
+      type: 'stopped',
+      reason: 'idle',
+      pose: { position: { x: args.x, y: args.y }, orientation: 0 } as Pose,
+    } as Motion;
+    await ctx.db.insert('journal', {
+      playerId: args.playerId,
+      data: motion,
+    });
+  },
+});
+
+// For making conversations happen without walking around, clear before conversation start.
+export const runConversationClear = internalAction({
+  args: { maxMessages: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    await ctx.runAction(internal.init.resetFrozen);
+    await runConversation(ctx, args);
+  },
+});
+// For making conversations happen without walking around.
+export const runConversation = internalAction({
+  args: {
+    maxMessages: v.optional(v.number()),
+    conversationCount: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { playerIds, world } = await ctx.runQuery(internal.testing.getDebugPlayerIds);
+    const memory = MemoryDB(ctx);
+    let ourConversationId: Id<'conversations'> | null = null;
+    let maxConversationsCount = args.conversationCount || 1;
+    let conversationsCompleted = 0;
+    let walkawayCount = 0;
+    // 1 Conversation is completed when 2 agents leaves the conversations?
+    while (maxConversationsCount * 2 > conversationsCompleted) {
+      for (const playerId of playerIds) {
+        console.log('playerId', playerId);
+        const { snapshot, thinkId } = await ctx.runMutation(
+          internal.testing.debugAgentSnapshotWithThinking,
+          {
+            playerId,
+          },
+        );
         const actionAPI = (action: Action) =>
           ctx.runMutation(internal.engine.handleAgentAction, {
             playerId,
@@ -101,56 +224,65 @@ export const runConversation = internalAction({
             noSchedule: true,
           });
         const { player, nearbyPlayers, nearbyConversations } = snapshot;
+        const currentConversation = nearbyConversations.find(
+          (a) => a.conversationId == player.lastSpokeConversationId,
+        );
         if (nearbyPlayers.find(({ player }) => player.thinking)) {
           throw new Error('Unexpected thinking player ' + playerId);
         }
-        const newFriends = nearbyPlayers.filter((a) => a.new).map(({ player }) => player);
-        if (firstTime) {
-          firstTime = false;
+        console.log('snapshot', snapshot);
+        const players = nearbyPlayers.map(({ player }) => player);
+        const audience = players.map((a) => a.id);
+        if (!currentConversation && ourConversationId == null) {
+          // If we're not in a conversation, start one.
           if (nearbyConversations.length) {
             throw new Error('Unexpected conversations taking place');
           }
           const conversationEntry = (await actionAPI({
             type: 'startConversation',
-            audience: newFriends.map((a) => a.id),
+            audience,
           })) as EntryOfType<'startConversation'>;
+          console.log('conversationEntry', conversationEntry);
           if (!conversationEntry) throw new Error('Unexpected failure to start conversation');
-          const newFriendsNames = newFriends.map((a) => a.name);
-          const playerCompletion = await startConversation(newFriendsNames, memory, player);
+          const relationships = nearbyPlayers.map((a) => ({
+            name: a.player.name,
+            relationship: a.relationship,
+          }));
+          const playerCompletion = await startConversation(relationships, memory, player);
           if (
             !(await actionAPI({
               type: 'talking',
-              audience: newFriends.map((a) => a.id),
+              audience,
               content: playerCompletion,
               conversationId: conversationEntry.data.conversationId,
             }))
-          )
+          ) {
             throw new Error('Unexpected failure to start conversation');
+          }
+
+          ourConversationId = conversationEntry.data.conversationId;
         } else {
-          if (nearbyConversations.length !== 1) {
+          // If we're in a conversation, keep talking.
+          if (
+            nearbyConversations.length !== 1 &&
+            nearbyConversations.find((a) => a.conversationId !== ourConversationId)
+          ) {
             throw new Error('Unexpected conversations taking place');
           }
           const { conversationId, messages } = nearbyConversations[0];
-          if (!ourConversationId) {
-            ourConversationId = conversationId;
-          } else {
-            if (conversationId !== ourConversationId) {
-              throw new Error(
-                'Unexpected conversationId ' + conversationId + ' != ' + ourConversationId,
-              );
-            }
-          }
-          const chatHistory: Message[] = [
-            ...messages.map((m) => ({
-              role: 'user' as const,
-              content: `${m.fromName} to ${m.toNames.join(',')}: ${m.content}\n`,
-            })),
-          ];
-          const shouldWalkAway = await walkAway(chatHistory, player);
+
+          const chatHistory = chatHistoryFromMessages(messages);
+          const shouldWalkAway =
+            (args.maxMessages && args.maxMessages >= messages.length) ||
+            (await walkAway(chatHistory, player));
+
           if (shouldWalkAway) {
-            done = true;
-            await actionAPI({ type: 'done', thinkId });
-            break;
+            walkawayCount++;
+            await actionAPI({ type: 'leaveConversation', audience, conversationId });
+            console.log('Is walking away playername', player.name);
+            const done = await actionAPI({ type: 'done', thinkId });
+            console.log('actionApi.done', done);
+            continue;
           }
           const playerCompletion = await converse(chatHistory, player, nearbyPlayers, memory);
           // display the chat via actionAPI
@@ -161,12 +293,24 @@ export const runConversation = internalAction({
             conversationId: conversationId,
           });
         }
-        await actionAPI({ type: 'done', thinkId });
+        const done = await actionAPI({ type: 'done', thinkId });
+        console.log('outside bracket done', done);
+        console.log('playername', player.name);
       }
     }
     if (!ourConversationId) throw new Error('No conversationId');
     for (const playerId of playerIds) {
-      await memory.rememberConversation(playerId, ourConversationId, Date.now());
+      const snapshot = await ctx.runQuery(internal.testing.debugPlayerIdSnapshot, {
+        playerId,
+      });
+      const player = snapshot.player;
+      await memory.rememberConversation(
+        player.name,
+        playerId,
+        player.identity,
+        ourConversationId,
+        Date.now(),
+      );
     }
   },
 });

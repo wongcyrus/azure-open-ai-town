@@ -3,25 +3,29 @@ import { useEffect, useRef, useState } from 'react';
 import { PixiStaticMap } from './PixiStaticMap';
 import { ConvexProvider, useConvex, useMutation, useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
-import { Player } from './Player';
+import { Player, SelectPlayer } from './Player';
 
-export const Game = () => {
+export const Game = ({ setSelectedPlayer }: { setSelectedPlayer: SelectPlayer }) => {
   const convex = useConvex();
   const worldState = useQuery(api.players.getWorld, {});
+
   const offset = useServerTimeOffset();
   if (!worldState) return null;
   const { world, players } = worldState;
   console.log('worldId', world._id);
   return (
     <Stage width={640} height={640} options={{ backgroundColor: 0xffffff }}>
-
-      <PixiStaticMap width={512} height={512}></PixiStaticMap>
+      <PixiStaticMap map={worldState.map}></PixiStaticMap>
       <ConvexProvider client={convex}>
-        {players
-          // .slice(0, 1)
-          .map((player) => (
-            <Player key={player._id} player={player} offset={offset} />
-          ))}
+        {players.map((player) => (
+          <Player
+            key={player._id}
+            player={player}
+            offset={offset}
+            tileDim={worldState.map.tileDim}
+            onClick={setSelectedPlayer}
+          />
+        ))}
       </ConvexProvider>
     </Stage>
   );
