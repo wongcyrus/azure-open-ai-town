@@ -2,13 +2,36 @@ import { v } from 'convex/values';
 import { api, internal } from './_generated/api';
 import { Doc, Id } from './_generated/dataModel';
 import { internalAction, internalMutation, internalQuery } from './_generated/server';
-import { getAgentSnapshot } from './engine';
+import { getAgentSnapshot, handlePlayerAction } from './engine';
 import { getAllPlayers } from './players';
 import { asyncMap } from './lib/utils';
 import { Action, Entry, EntryOfType, Motion, Player, Pose } from './types';
 import { clientMessageMapper } from './chat';
 import { MemoryDB } from './lib/memory';
 import { chatHistoryFromMessages, converse, startConversation, walkAway } from './conversation';
+
+export const converge = internalMutation({
+  args: {},
+  handler: async (ctx, args) => {
+    const worlds = await ctx.db.query('worlds').collect();
+    for (const world of worlds) {
+      const players = await getAllPlayers(ctx.db, world._id);
+      const position = {
+        x: Math.floor(Math.random() * world.width),
+        y: Math.floor(Math.random() * world.height),
+      };
+      for (const player of players) {
+        await handlePlayerAction(ctx, {
+          playerId: player._id,
+          action: {
+            type: 'travel',
+            position,
+          },
+        });
+      }
+    }
+  },
+});
 
 export const debugAgentSnapshotWithThinking = internalMutation({
   args: { playerId: v.id('players') },
@@ -53,7 +76,7 @@ export const debugAllPlayerSnapshot = internalQuery({
 export const debugPlayerSnapshot = internalQuery({
   args: {},
   handler: async (ctx, args) => {
-    const player = await ctx.db.query('players').first();
+    const player = await ctx.db.query('players').order('desc').first();
     if (!player) return null;
     const snapshot = await getAgentSnapshot(ctx, player._id);
     return snapshot;
@@ -225,7 +248,7 @@ export const runConversation = internalAction({
           });
         const { player, nearbyPlayers, nearbyConversations } = snapshot;
         const currentConversation = nearbyConversations.find(
-          (a) => a.conversationId == player.lastSpokeConversationId,
+          (a) => a.conversationId == player.lastChat?.conversationId,
         );
         if (nearbyPlayers.find(({ player }) => player.thinking)) {
           throw new Error('Unexpected thinking player ' + playerId);

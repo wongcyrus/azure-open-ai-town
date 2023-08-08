@@ -129,36 +129,11 @@ export const addPlayers = internalMutation({
   },
 });
 
-export const debugClearAll = internalMutation({
-  args: {},
-  handler: async (ctx, args) => {
-    const deleteAll = async (tableName: TableNames) => {
-      // fetch the most recent 1000
-      const docs = await ctx.db.query(tableName).order('desc').take(1000);
-      await asyncMap(
-        docs.map((d) => d._id),
-        ctx.db.delete,
-      );
-      if (await ctx.db.query(tableName).first()) {
-        console.log("Didn't delete all: more than 1k entries in " + tableName);
-      }
-    };
-    await deleteAll('players');
-    await deleteAll('characters');
-    await deleteAll('journal');
-    await deleteAll('memories');
-    await deleteAll('memoryAccesses');
-    await deleteAll('conversations');
-    await deleteAll('worlds');
-  },
-});
-
 export const reset = internalAction({
   args: {},
   handler: async (ctx, args) => {
     await ctx.runMutation(internal.engine.freezeAll);
-    await ctx.runMutation(internal.init.debugClearAll, {});
-    const worldId = await ctx.runAction(internal.init.seed, {});
+    const worldId = await ctx.runAction(internal.init.seed, { newWorld: true });
     await ctx.runMutation(internal.engine.tick, { worldId });
   },
 });
@@ -166,9 +141,8 @@ export const reset = internalAction({
 export const resetFrozen = internalAction({
   args: {},
   handler: async (ctx, args) => {
-    await ctx.runMutation(internal.init.debugClearAll, {});
-    await ctx.runAction(internal.init.seed, {});
     await ctx.runMutation(internal.engine.freezeAll);
+    await ctx.runAction(internal.init.seed, { newWorld: true });
   },
 });
 
@@ -212,10 +186,6 @@ export const seed = internalAction({
           playerId,
           data,
           description: memory.description,
-          // You can add custom importances to override the calculated ones.
-          // importance: memory.importance,
-          // Set the memories in the past, so they don't all have the same ts.
-          ts: Date.now() - (memories.length - idx) * 1000,
         };
 
         return newMemory;

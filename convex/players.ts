@@ -10,14 +10,14 @@ import {
   mutation,
   query,
 } from './_generated/server';
-import { getPlayer, handlePlayerAction } from './engine';
+import { HEARTBEAT_PERIOD, getPlayer, handlePlayerAction } from './engine';
 import { Action, Pose } from './types';
 
 export const getWorld = query({
   args: {},
   handler: async (ctx, args) => {
     // TODO: based on auth, fetch the user's world
-    const world = await ctx.db.query('worlds').first();
+    const world = await ctx.db.query('worlds').order('desc').first();
     if (!world) {
       console.error('No world found');
       return null;
@@ -35,6 +35,11 @@ export const getWorld = query({
 export const now = mutation({
   args: {},
   handler: async (ctx, args) => {
+    // TODO: based on auth, heartbeat for that user for presence
+    const lastHeartbeat = await ctx.db.query('heartbeats').order('desc').first();
+    if (!lastHeartbeat || lastHeartbeat._creationTime + HEARTBEAT_PERIOD < Date.now()) {
+      await ctx.db.insert('heartbeats', {});
+    }
     return Date.now();
   },
 });

@@ -19,24 +19,34 @@ import {
   Pose,
   Snapshot,
   Motion,
+  Message,
 } from './types.js';
-import { asyncMap, pruneNull } from './lib/utils.js';
+import { asyncFilter, asyncMap, pruneNull } from './lib/utils.js';
 import { getPoseFromMotion, manhattanDistance, roundPose } from './lib/physics.js';
 import { findCollision, findRoute } from './lib/routing';
 import { clientMessageMapper } from './chat';
 import { getAllPlayers } from './players';
 
 export const NEARBY_DISTANCE = 3;
+// Close enough to stop and observe something.
+export const CLOSE_DISTANCE = 2;
 export const TIME_PER_STEP = 1000;
 export const DEFAULT_AGENT_IDLE = 300_000;
 // If you don't set a start position, you'll start at 0,0.
 export const DEFAULT_START_POSE: Pose = { position: { x: 0, y: 0 }, orientation: 0 };
 export const CONVERSATION_DEAD_THRESHOLD = 600_000; // In ms
+export const HEARTBEAT_PERIOD = 30_000; // In ms
+export const WORLD_IDLE_THRESHOLD = 300_000; // In ms
 
 export const tick = internalMutation({
   args: { worldId: v.id('worlds'), forPlayers: v.optional(v.array(v.id('players'))) },
   handler: async (ctx, { worldId, forPlayers }) => {
     const ts = Date.now();
+    const lastHeartbeat = await ctx.db.query('heartbeats').order('desc').first();
+    if (!lastHeartbeat || lastHeartbeat._creationTime + WORLD_IDLE_THRESHOLD < ts) {
+      console.log("Didn't tick: no heartbeat recently");
+      return;
+    }
     const world = (await ctx.db.get(worldId))!;
     if (world.frozen) return;
     const playerDocs = await getAllPlayers(ctx.db, worldId);
@@ -46,7 +56,7 @@ export const tick = internalMutation({
     );
 
     // Sort players by how long ago they last spoke
-    playerSnapshots.sort((a, b) => a.lastSpokeTs - b.lastSpokeTs);
+    playerSnapshots.sort((a, b) => (a.lastChat?.message.ts ?? 0) - (b.lastChat?.message.ts ?? 0));
 
     // For each player (oldest to newest? Or all on the same step?):
     for (let idx = 0; idx < playerSnapshots.length; idx++) {
@@ -124,22 +134,14 @@ export async function handlePlayerAction(
   let entryId: Id<'journal'> | undefined;
   switch (action.type) {
     case 'startConversation':
-      const available = pruneNull(
-        await asyncMap(action.audience, async (playerId) => {
-          const latestStart = await latestEntryOfType(ctx.db, playerId, 'startConversation');
-          const latestTalk = await latestEntryOfType(ctx.db, playerId, 'talking');
-          const latestLeft = await latestEntryOfType(ctx.db, playerId, 'leaveConversation');
-          return (latestLeft?._creationTime ?? Date.now()) >
-            Math.max(latestStart?._creationTime ?? 0, latestTalk?._creationTime ?? 0)
-            ? playerId
-            : null;
-        }),
+      // Find players available to talk to.
+      const conversationId = await ctx.db.insert('conversations', { worldId });
+      action.audience = await asyncFilter(action.audience, async (playerId) =>
+        playerAvailableForConversation(ctx.db, playerId, conversationId),
       );
-      if (available.length === 0) {
+      if (action.audience.length === 0) {
         return null;
       }
-      action.audience = available;
-      const conversationId = await ctx.db.insert('conversations', { worldId });
       entryId = await ctx.db.insert('journal', {
         playerId,
         data: {
@@ -150,7 +152,14 @@ export async function handlePlayerAction(
       await tick(action.audience);
       break;
     case 'talking':
-      // TODO: Check if these players are still nearby
+      console.log('talking ', action.conversationId);
+      action.audience = await asyncFilter(action.audience, async (playerId) =>
+        playerAvailableForConversation(ctx.db, playerId, action.conversationId),
+      );
+      if (action.audience.length === 0) {
+        console.log("Didn't talk");
+        return null;
+      }
       entryId = await ctx.db.insert('journal', {
         playerId,
         data: action,
@@ -158,10 +167,19 @@ export async function handlePlayerAction(
       await tick(action.audience);
       break;
     case 'leaveConversation':
+      console.log('leaving ', action.conversationId);
+      action.audience = await asyncFilter(action.audience, async (playerId) =>
+        playerAvailableForConversation(ctx.db, playerId, action.conversationId),
+      );
       entryId = await ctx.db.insert('journal', {
         playerId,
         data: action,
       });
+      if (action.audience.length === 0) {
+        console.log('No one left in convo');
+      } else {
+        await tick(action.audience);
+      }
       break;
     case 'travel':
       const world = (await ctx.db.get(playerDoc.worldId))!;
@@ -179,6 +197,11 @@ export async function handlePlayerAction(
         action.position,
         ts,
       );
+      const targetEndTs = ts + distance * TIME_PER_STEP;
+      entryId = await ctx.db.insert('journal', {
+        playerId,
+        data: { type: 'walking', route, startTs: ts, targetEndTs },
+      });
       // TODO: get the player IDs who we'll run into first, to schedule a tick.
       const nextCollisionDistance = findCollision(
         route,
@@ -189,13 +212,8 @@ export async function handlePlayerAction(
             NEARBY_DISTANCE,
         ),
         ts,
-        NEARBY_DISTANCE,
+        CLOSE_DISTANCE,
       );
-      const targetEndTs = ts + distance * TIME_PER_STEP;
-      entryId = await ctx.db.insert('journal', {
-        playerId,
-        data: { type: 'walking', route, startTs: ts, targetEndTs },
-      });
       await tick(
         [playerId],
         nextCollisionDistance === null ? targetEndTs : ts + nextCollisionDistance * TIME_PER_STEP,
@@ -227,6 +245,31 @@ export async function handlePlayerAction(
   return (await ctx.db.get(entryId))!;
 }
 
+async function playerAvailableForConversation(
+  db: DatabaseReader,
+  playerId: Id<'players'>,
+  conversationId: Id<'conversations'>,
+) {
+  const latestConversation = await getLatestPlayerConversation(db, playerId);
+  if (!latestConversation) return true;
+  if (latestConversation.data.conversationId === conversationId) {
+    if (latestConversation.data.type === 'leaveConversation') {
+      // The left our conversation
+      return false;
+    }
+    // They are in our conversation, and haven't left
+    return true;
+  } else {
+    // They left another conversation, so they're available to chat.
+    // Future: technically we could check if they've already left our convo?
+    if (latestConversation.data.type === 'leaveConversation') {
+      return true;
+    }
+    // They're still in another conversation
+    return false;
+  }
+}
+
 async function makeSnapshot(
   db: DatabaseReader,
   player: Player,
@@ -234,7 +277,8 @@ async function makeSnapshot(
 ): Promise<Snapshot> {
   const lastThink = await latestEntryOfType(db, player.id, 'thinking');
   const otherPlayers = otherPlayersAndMe.filter((d) => d.id !== player.id);
-  const nearbyPlayers = await asyncMap(getNearbyPlayers(player, otherPlayers), async (other) => ({
+  const nearbyOthers = getNearbyPlayers(player, otherPlayers);
+  const nearbyPlayers = await asyncMap(nearbyOthers, async (other) => ({
     player: other,
     relationship:
       (await latestRelationshipMemoryWith(db, player.id, other.id))?.description ??
@@ -246,17 +290,13 @@ async function makeSnapshot(
     player,
     lastPlan: planEntry ? { plan: planEntry.description, ts: planEntry._creationTime } : undefined,
     nearbyPlayers,
-    nearbyConversations: await getNearbyConversations(
-      db,
-      player.id,
-      otherPlayersAndMe.map(({ id }) => id),
-    ),
+    nearbyConversations: await getNearbyConversations(db, player, nearbyOthers),
   };
 }
 
 export async function getPlayer(db: DatabaseReader, playerDoc: Doc<'players'>): Promise<Player> {
   const lastThink = await latestEntryOfType(db, playerDoc._id, 'thinking');
-  const lastChat = await latestEntryOfType(db, playerDoc._id, 'talking'); //does this include conversations agent left?
+  const latestConversation = await getLatestPlayerConversation(db, playerDoc._id);
   const identityEntry = await latestMemoryOfType(db, playerDoc._id, 'identity');
   const identity = identityEntry?.description ?? 'I am a person.';
 
@@ -268,8 +308,10 @@ export async function getPlayer(db: DatabaseReader, playerDoc: Doc<'players'>): 
     thinking: !!lastThink && !lastThink?.data.finishedTs,
     lastThinkTs: lastThink?._creationTime,
     lastThinkEndTs: lastThink?.data.finishedTs,
-    lastSpokeTs: lastChat?._creationTime ?? 0,
-    lastSpokeConversationId: lastChat?.data.conversationId,
+    lastChat: latestConversation && {
+      message: await clientMessageMapper(db)(latestConversation),
+      conversationId: latestConversation.data.conversationId,
+    },
     motion: await getLatestPlayerMotion(db, playerDoc._id),
   };
 }
@@ -281,6 +323,15 @@ export async function getLatestPlayerMotion(db: DatabaseReader, playerId: Id<'pl
     .sort((a, b) => a._creationTime - b._creationTime)
     .pop()?.data;
   return latestMotion ?? { type: 'stopped', reason: 'idle', pose: DEFAULT_START_POSE };
+}
+
+async function getLatestPlayerConversation(db: DatabaseReader, playerId: Id<'players'>) {
+  const lastChat = await latestEntryOfType(db, playerId, 'talking');
+  const lastStartChat = await latestEntryOfType(db, playerId, 'startConversation');
+  const lastLeaveChat = await latestEntryOfType(db, playerId, 'leaveConversation');
+  return pruneNull([lastChat, lastStartChat, lastLeaveChat])
+    .sort((a, b) => a._creationTime - b._creationTime)
+    .pop();
 }
 
 function getNearbyPlayers(target: Player, others: Player[]) {
@@ -297,57 +348,64 @@ function getNearbyPlayers(target: Player, others: Player[]) {
 
 async function getNearbyConversations(
   db: DatabaseReader,
-  playerId: Id<'players'>,
-  playerIds: Id<'players'>[],
+  player: Player,
+  otherPlayers: Player[],
 ): Promise<Snapshot['nearbyConversations']> {
-  const conversationsById = pruneNull(
-    await asyncMap(playerIds, async (playerId) => await latestEntryOfType(db, playerId, 'talking')),
-  )
+  const conversationsById = pruneNull([...otherPlayers, player].map((p) => p.lastChat))
+    // Filter out conversations they left
+    .filter((chat) => chat.message.type !== 'left')
     // Filter out old conversations
-    .filter((entry) => Date.now() - entry._creationTime < CONVERSATION_DEAD_THRESHOLD)
+    .filter((chat) => Date.now() - chat.message.ts < CONVERSATION_DEAD_THRESHOLD)
     // Get the latest message for each conversation, keyed by conversationId.
-    .reduce<Record<Id<'conversations'>, EntryOfType<'talking'>>>((convos, entry) => {
-      const existing = convos[entry.data.conversationId];
-      if (!existing || existing._creationTime < entry._creationTime) {
-        convos[entry.data.conversationId] = entry;
-      }
-      return convos;
-    }, {});
+    .reduce<Record<Id<'conversations'>, { message: Message; conversationId: Id<'conversations'> }>>(
+      (convos, chat) => {
+        const existing = convos[chat.conversationId];
+        if (!existing || existing.message.ts < chat.message.ts) {
+          convos[chat.conversationId] = chat;
+        }
+        return convos;
+      },
+      {},
+    );
   // Now, filter out conversations that did't include the observer.
   const conversations = Object.values(conversationsById).filter(
-    (entry) => entry.data.audience.includes(playerId) || entry.playerId === playerId,
+    (chat) => chat.message.to.includes(player.id) || chat.message.from === player.id,
   );
   const leftConversations = (
     (await db
       .query('journal')
       .withIndex('by_playerId_type', (q) =>
-        q.eq('playerId', playerId).eq('data.type', 'leaveConversation'),
+        q.eq('playerId', player.id).eq('data.type', 'leaveConversation'),
       )
       .filter((q) =>
-        q.or(
-          ...conversations.map((c) => q.eq(q.field('data.conversationId'), c.data.conversationId)),
-        ),
+        q.or(...conversations.map((c) => q.eq(q.field('data.conversationId'), c.conversationId))),
       )
       .collect()) as EntryOfType<'leaveConversation'>[]
   ).map((e) => e.data.conversationId);
   const stillInConversations = conversations.filter(
-    (c) => !leftConversations.includes(c.data.conversationId),
+    (c) => !leftConversations.includes(c.conversationId),
   );
+  const otherIds = new Set(otherPlayers.map((p) => p.id));
   return (
-    await asyncMap(stillInConversations, async (entry) => ({
-      conversationId: entry.data.conversationId,
-      messages: (
-        await asyncMap(await fetchMessages(db, entry.data.conversationId), clientMessageMapper(db))
-      ).filter((message) => message.to.includes(playerId) || message.from === playerId),
-    }))
-  ).filter((c) => c.messages.length > 0);
+    (
+      await asyncMap(stillInConversations, async (entry) => ({
+        conversationId: entry.conversationId,
+        messages: (
+          await asyncMap(await fetchMessages(db, entry.conversationId), clientMessageMapper(db))
+        ).filter((message) => message.to.includes(player.id) || message.from === player.id),
+      }))
+    )
+      // Filter out any conversations where all other message senders are not present
+      .filter((c) => c.messages.filter((m) => otherIds.has(m.from)).length > 0)
+  );
 }
 
 async function fetchMessages(db: DatabaseReader, conversationId: Id<'conversations'>) {
   const messageEntries = await db
     .query('journal')
     .withIndex('by_conversation', (q) => q.eq('data.conversationId', conversationId as any))
-    .filter((q) => q.eq(q.field('data.type'), 'talking'))
+    // We are fetching all message types, including starting convo & leaving
+    // .filter((q) => q.eq(q.field('data.type'), 'talking'))
     .collect();
   return messageEntries as EntryOfType<'talking'>[];
 }

@@ -7,14 +7,12 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
-  mutation,
-  query,
 } from '../_generated/server.js';
 import { asyncMap } from './utils.js';
 import { EntryOfType, Memories, MemoryOfType } from '../types.js';
 import { chatGPTCompletion, fetchEmbeddingBatch } from './openai.js';
 import { clientMessageMapper } from '../chat.js';
-import { pineconeAvailable, pineconeIndex, upsertVectors } from './pinecone.js';
+import { pineconeAvailable, queryVectors, upsertVectors } from './pinecone.js';
 import { chatHistoryFromMessages } from '../conversation.js';
 
 const { embeddingId: _, ...MemoryWithoutEmbeddingId } = Memories.fields;
@@ -40,7 +38,7 @@ export interface MemoryDB {
     playerId: Id<'players'>,
     playerIdentity: string,
     conversationId: Id<'conversations'>,
-    lastSpokeTs: number,
+    lastSpokeTs?: number,
   ): Promise<boolean>;
 }
 
@@ -59,24 +57,8 @@ export function MemoryDB(ctx: ActionCtx): MemoryDB {
   ) => Promise<any>;
   // If Pinecone env variables are defined, use that.
   if (pineconeAvailable()) {
-    vectorSearch = async (embedding: number[], playerId: Id<'players'>, limit: number) => {
-      const pinecone = await pineconeIndex();
-      const { matches } = await pinecone.query({
-        queryRequest: {
-          namespace: 'embeddings',
-          topK: limit,
-          vector: embedding,
-          filter: { playerId },
-        },
-      });
-      if (!matches) {
-        throw new Error('Pinecone returned undefined results');
-      }
-      return matches.filter((m) => !!m.score).map(({ id, score }) => ({ _id: id, score })) as {
-        _id: Id<'embeddings'>;
-        score: number;
-      }[];
-    };
+    vectorSearch = async (embedding: number[], playerId: Id<'players'>, limit: number) =>
+      queryVectors('embeddings', embedding, { playerId }, limit);
     externalEmbeddingStore = async (
       embeddings: { id: Id<'embeddings'>; values: number[]; metadata: object }[],
     ) => upsertVectors('embeddings', embeddings);
@@ -239,7 +221,8 @@ export const accessMemories = internalMutation({
         .order('desc')
         .first();
       if (!access) return 1;
-      return 0.99 ^ Math.floor((ts - access._creationTime) / 1000 / 60 / 60);
+      const accessTime = access ? access._creationTime : memory._creationTime;
+      return 0.99 ^ Math.floor((ts - accessTime) / 1000 / 60 / 60);
     });
     const relevanceRange = makeRange(candidates.map((c) => c.score));
     const importanceRange = makeRange(relatedMemories.map((m) => m.importance));
@@ -349,7 +332,7 @@ export const getRecentMessages = internalQuery({
   args: {
     playerId: v.id('players'),
     conversationId: v.id('conversations'),
-    lastSpokeTs: v.number(),
+    lastSpokeTs: v.optional(v.number()),
   },
   handler: async (ctx, { playerId, conversationId, lastSpokeTs }) => {
     // Fetch the last memory, whether it was this conversation or not.
@@ -361,7 +344,7 @@ export const getRecentMessages = internalQuery({
       .order('desc')
       .first()) as MemoryOfType<'conversation'> | null;
 
-    if (lastSpokeTs < (lastConversationMemory?._creationTime ?? 0)) {
+    if (lastSpokeTs && lastSpokeTs < (lastConversationMemory?._creationTime ?? 0)) {
       // We haven't spoken since a conversation memory, so probably not worth recording.
       return [];
     }

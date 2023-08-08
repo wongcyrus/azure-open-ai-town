@@ -94,25 +94,28 @@ export const Action = v.union(
 );
 export type Action = Infer<typeof Action>;
 
-export const Message = v.object({
+const commonFields = {
   from: v.id('players'),
   fromName: v.string(),
   to: v.array(v.id('players')),
   toNames: v.array(v.string()),
-  data: v.union(
-    v.object({
-      type: v.literal('started'),
-    }),
-    v.object({
-      type: v.literal('responded'),
-      content: v.string(),
-    }),
-    v.object({
-      type: v.literal('left'),
-    }),
-  ),
   ts: v.number(),
-});
+};
+export const Message = v.union(
+  v.object({
+    ...commonFields,
+    type: v.literal('started'),
+  }),
+  v.object({
+    ...commonFields,
+    type: v.literal('responded'),
+    content: v.string(),
+  }),
+  v.object({
+    ...commonFields,
+    type: v.literal('left'),
+  }),
+);
 export type Message = Infer<typeof Message>;
 // export type ResponseMessage = Omit<Message, 'data'> & {
 //   data: Extract<Message['data'], { type: 'responded' }>;
@@ -144,8 +147,7 @@ export const Player = v.object({
   thinking: v.boolean(),
   lastThinkTs: v.optional(v.number()),
   lastThinkEndTs: v.optional(v.number()),
-  lastSpokeTs: v.number(),
-  lastSpokeConversationId: v.optional(v.id('conversations')),
+  lastChat: v.optional(v.object({ message: Message, conversationId: v.id('conversations') })),
 });
 export type Player = Infer<typeof Player>;
 
@@ -168,7 +170,6 @@ export type Snapshot = Infer<typeof Snapshot>;
 
 // Journal documents are append-only, and define an player's state.
 export const Journal = Table('journal', {
-  ts: v.optional(v.number()), // TODO: delete later
   playerId: v.id('players'),
   // emojiSummary: v.string(),
   data: v.union(
@@ -184,13 +185,10 @@ export const Journal = Table('journal', {
     // When we run the agent loop.
     v.object({
       type: v.literal('thinking'),
+      // We can technically snip this, and re-create it on-demand at a
+      // given timestamp. However, it's convenient to have it here for now.
       snapshot: Snapshot,
       finishedTs: v.optional(v.number()),
-    }),
-    // In case we don't do anything, confirm we're done thinking.
-    // TODO: Unused, clean up later:
-    v.object({
-      type: v.literal('done_thinking'),
     }),
 
     // Exercises left to the reader:
@@ -214,7 +212,6 @@ export const Memories = Table('memories', {
   description: v.string(),
   embeddingId: v.id('embeddings'),
   importance: v.number(),
-  ts: v.optional(v.number()), // TODO: delete later
   data: v.union(
     // Useful for seed memories, high level goals
     v.object({
