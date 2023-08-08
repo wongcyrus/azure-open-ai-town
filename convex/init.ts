@@ -12,6 +12,7 @@ import { asyncMap } from './lib/utils';
 import { Characters } from './types';
 import { tiledim, objmap, tilefiledim, bgtiles, tilesetpath } from './maps/firstmap';
 import { data as playerSpritesheetData } from './spritesheets/player';
+import { data as ghostSpritesheetData } from './spritesheets/ghost';
 
 if (!process.env.OPENAI_API_KEY) {
   throw new Error(
@@ -47,7 +48,7 @@ const Data = [
   },
   {
     name: 'Lucky',
-    character: 'player',
+    character: 'ghost',
     memories: [
       {
         type: 'identity' as const,
@@ -181,6 +182,12 @@ export const seed = internalAction({
         name: 'player',
         textureUrl: '/assets/player.png',
         spritesheetData: playerSpritesheetData,
+        speed: 0.1,
+      },
+      {
+        name: 'ghost',
+        textureUrl: '/assets/ghost.png',
+        spritesheetData: ghostSpritesheetData,
         speed: 0.1,
       },
     ];

@@ -42,7 +42,10 @@ export const Character = ({
     void parseSheet();
   }, []);
 
-  if (!spriteSheet) return null;
+  if (!spriteSheet) {
+    console.log("** Unable to parse SpriteSheet "+textureUrl);
+    return null;
+  }
 
   // The first "left" is "right" but reflected.
   const roundedOrientation = Math.round(orientation / 90);
