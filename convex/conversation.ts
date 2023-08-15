@@ -38,7 +38,7 @@ export async function startConversation(
         `\n${player.name}:`,
     },
   ];
-  const stop = stopWords(newFriendsNames);
+  const stop = stopWords([player.name, ...newFriendsNames]);
   const { content } = await chatCompletion({ messages: prompt, max_tokens: 300, stop });
   return { content, memoryIds: memories.map((m) => m.memory._id) };
 }
@@ -160,7 +160,7 @@ export async function converse(
       content: `${player.name}:`,
     },
   ];
-  const stop = stopWords(nearbyPlayers.map((p) => p.name));
+  const stop = stopWords([player.name, ...nearbyPlayers.map((p) => p.name)]);
   const { content } = await chatCompletion({ messages: prompt, max_tokens: 300, stop });
   // console.debug('converse result through chatgpt: ', content);
   return { content, memoryIds: memories.map((m) => m.memory._id) };
