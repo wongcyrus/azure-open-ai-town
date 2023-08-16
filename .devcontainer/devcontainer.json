@@ -15,7 +15,8 @@
 			"settings": {				
 			},
 			// Add the IDs of extensions you want installed when the container is created.
-			"extensions": [				
+			"extensions": [
+				"ms-azuretools.vscode-docker",				
 				"GitHub.copilot"
 			]
 		}
