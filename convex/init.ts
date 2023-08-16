@@ -12,15 +12,15 @@ import { Characters } from './schema';
 import { tiledim, objmap, tilefiledim, bgtiles, tilesetpath } from './maps/firstmap';
 import { Descriptions, characters as characterData } from './characterdata/data';
 
-if (!process.env.OPENAI_API_KEY) {
+if (!process.env.AZURE_OPENAI_API_KEY) {
   const deploymentName = process.env.CONVEX_CLOUD_URL?.slice(8).replace('.convex.cloud', '');
   throw new Error(
-    '\n  Missing OPENAI_API_KEY in environment variables.\n\n' +
-      '  Get one at https://openai.com/\n\n' +
+    '\n  Missing AZURE_OPENAI_API_KEY in environment variables.\n\n' +
+      '  Get one at https://azure.microsoft.com/en-us/products/ai-services/openai-service-b\n\n' +
       '  Paste it on the Convex dashboard:\n' +
       '  https://dashboard.convex.dev/d/' +
       deploymentName +
-      '/settings?var=OPENAI_API_KEY',
+      '/settings?var=AZURE_OPENAI_API_KEY',
   );
 }
 

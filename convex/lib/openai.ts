@@ -5,25 +5,25 @@ export async function chatCompletion(
     model?: CreateChatCompletionRequest['model'];
   },
 ) {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.AZURE_OPENAI_API_KEY) {
     throw new Error(
-      'Missing OPENAI_API_KEY in environment variables.\n' +
+      'Missing AZURE_OPENAI_API_KEY in environment variables.\n' +
         'Set it in the project settings in the Convex dashboard:\n' +
         '    npx convex dashboard\n or https://dashboard.convex.dev',
     );
   }
 
-  body.model = body.model ?? 'gpt-3.5-turbo-16k';
+  body.model = body.model ?? 'gpt-35-turbo';
   const {
     result: json,
     retries,
     ms,
   } = await retryWithBackoff(async () => {
-    const result = await fetch('https://api.openai.com/v1/chat/completions', {
+    const result = await fetch('https://eastus.api.cognitive.microsoft.com/openai/deployments/gpt-35-turbo/chat/completions?api-version=2023-03-15-preview', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + process.env.OPENAI_API_KEY,
+        'api-key': process.env.AZURE_OPENAI_API_KEY!,
       },
 
       body: JSON.stringify(body),
@@ -49,9 +49,9 @@ export async function chatCompletion(
 }
 
 export async function fetchEmbeddingBatch(texts: string[]) {
-  if (!process.env.OPENAI_API_KEY) {
+  if (!process.env.AZURE_OPENAI_API_KEY) {
     throw new Error(
-      'Missing OPENAI_API_KEY in environment variables.\n' +
+      'Missing AZURE_OPENAI_API_KEY in environment variables.\n' +
         'Set it in the project settings in the Convex dashboard:\n' +
         '    npx convex dashboard\n or https://dashboard.convex.dev',
     );
@@ -61,15 +61,14 @@ export async function fetchEmbeddingBatch(texts: string[]) {
     retries,
     ms,
   } = await retryWithBackoff(async () => {
-    const result = await fetch('https://api.openai.com/v1/embeddings', {
+    const result = await fetch('https://eastus.openai.azure.com/openai/deployments/text-embedding-ada-002/embeddings?api-version=2023-05-15', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer ' + process.env.OPENAI_API_KEY,
+        'api-key': process.env.AZURE_OPENAI_API_KEY!,
       },
 
       body: JSON.stringify({
-        model: 'text-embedding-ada-002',
         input: texts.map((text) => text.replace(/\n/g, ' ')),
       }),
     });
@@ -221,10 +220,10 @@ export interface CreateChatCompletionRequest {
     | 'gpt-4-0613'
     | 'gpt-4-32k'
     | 'gpt-4-32k-0613'
-    | 'gpt-3.5-turbo'
-    | 'gpt-3.5-turbo-0613'
-    | 'gpt-3.5-turbo-16k' // <- our default
-    | 'gpt-3.5-turbo-16k-0613';
+    | 'gpt-35-turbo'
+    | 'gpt-35-turbo-0613'
+    | 'gpt-35-turbo-16k' // <- our default
+    | 'gpt-35-turbo-16k-0613';
   /**
    * The messages to generate chat completions for, in the chat format:
    * https://platform.openai.com/docs/guides/chat/introduction
