@@ -1,0 +1,23 @@
+{
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "hostRequirements": {
+		"cpus": 4
+	},
+  "features": {
+    "ghcr.io/devcontainers/features/azure-cli:1": {},
+    "ghcr.io/devcontainers-contrib/features/typescript:2": {}
+  },
+	"customizations": {
+		"codespaces": {
+			"openFiles": []
+		},
+		"vscode": {
+			"settings": {				
+			},
+			// Add the IDs of extensions you want installed when the container is created.
+			"extensions": [				
+				"GitHub.copilot"
+			]
+		}
+	}
+}
