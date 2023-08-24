@@ -61,7 +61,7 @@ export async function fetchEmbeddingBatch(texts: string[]) {
     retries,
     ms,
   } = await retryWithBackoff(async () => {
-    const result = await fetch('https://eastus.openai.azure.com/openai/deployments/text-embedding-ada-002/embeddings?api-version=2023-05-15', {
+    const result = await fetch('https://eastus.api.cognitive.microsoft.com/openai/deployments/text-embedding-ada-002/embeddings?api-version=2023-05-15', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
