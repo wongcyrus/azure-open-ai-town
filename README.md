@@ -7,7 +7,7 @@
 <img width="1454" alt="Screen Shot 2023-08-14 at 10 01 00 AM" src="https://github.com/wongcyrus/azure-open-ai-town/blob/main/assets/Capture.JPG?raw=true">
 
 
-Azure OpenAI 小鎮 is a virtual town where AI characters live, chat and socialize, which a fort of AI Town and in Chinese.
+Azure OpenAI 小鎮 is a virtual town where AI characters live, chat and socialize, which a fork of AI Town and in Chinese.
 
 This project is a deployable starter kit for easily building and customizing your own version of AI town. Inspired by the research paper [_Generative Agents: Interactive Simulacra of Human Behavior_](https://arxiv.org/pdf/2304.03442.pdf).
 
