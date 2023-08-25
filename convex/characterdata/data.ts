@@ -26,7 +26,7 @@ export const Descriptions = [
         description: '你想找到爱情。',
       },
     ],
-    position: { x: 10, y: 10 },
+    position: { x: 1, y: 1 },
   },
   {
     name: 'Lucky',
@@ -71,7 +71,7 @@ export const Descriptions = [
         description: '你想尽可能地利用别人。',
       },
     ],
-    position: { x: 6, y: 6 },
+    position: { x: 1, y: 6 },
   },
   {
     name: 'Kurt',

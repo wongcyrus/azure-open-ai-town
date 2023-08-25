@@ -246,6 +246,7 @@ export const walk = internalMutation({
   },
   handler: async (ctx, { agentId, ignore, target }) => {
     const ts = Date.now();
+
     const agentDoc = (await ctx.db.get(agentId))!;
     const { playerId, worldId } = agentDoc;
     const world = (await ctx.db.get(worldId))!;

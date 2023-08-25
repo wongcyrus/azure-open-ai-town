@@ -1,4 +1,4 @@
-# Azure AI Town 🏠💻💌
+# Azure OpenAI Town 🏠💻💌
 
 [Live Demo](https://www.convex.dev/ai-town)
 
@@ -27,7 +27,7 @@ The primary goal of this project, beyond just being a lot of fun to work on, is 
 - Game engine & Database: [Convex](https://convex.dev/)
 - VectorDB: [Pinecone](https://www.pinecone.io/)
 - Auth: [Clerk](https://clerk.com/)
-- Text model: [OpenAI](https://platform.openai.com/docs/models)
+- Text model: [Azure OpenAI](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models#embeddings-models)
 - Deployment: [Fly](https://fly.io/)
 - Pixel Art Generation: [Replicate](https://replicate.com/), [Fal.ai](https://serverless.fal.ai/lora)
 
@@ -36,8 +36,6 @@ The primary goal of this project, beyond just being a lot of fun to work on, is 
 ### Clone repo and Install packages
 
 ```bash
-git clone git@github.com:a16z-infra/ai-town.git
-cd AI-town
 npm install
 npm run dev
 ```
@@ -126,6 +124,14 @@ command.
 ```bash
 npx convex run init:reset
 ```
+
+In case of hanging up and reset everything, but you need to run the command one by one.
+```
+npx convex run --no-push engine:freezeAll
+npx convex run --no-push testing:debugClearAll
+npx convex run init:reset
+```
+
 
 **To go one iteration at a time, you can create a world with**
 
