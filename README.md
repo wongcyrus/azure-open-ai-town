@@ -4,7 +4,7 @@
 
 [Join our community Discord: AI Stack Devs](https://discord.gg/PQUmTBTGmT)
 
-<img width="1454" alt="Screen Shot 2023-08-14 at 10 01 00 AM" src="https://github.com/wongcyrus/azure-open-ai-town/assets/Capture.JPG">
+<img width="1454" alt="Screen Shot 2023-08-14 at 10 01 00 AM" src="https://github.com/wongcyrus/azure-open-ai-town/blob/main/assets/Capture.JPG?raw=true">
 
 
 Azure OpenAI 小鎮 is a virtual town where AI characters live, chat and socialize, which a fort of AI Town and in Chinese.
