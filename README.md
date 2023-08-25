@@ -1,13 +1,13 @@
-# AI Town 🏠💻💌
+# Azure AI Town 🏠💻💌
 
 [Live Demo](https://www.convex.dev/ai-town)
 
 [Join our community Discord: AI Stack Devs](https://discord.gg/PQUmTBTGmT)
 
-<img width="1454" alt="Screen Shot 2023-08-14 at 10 01 00 AM" src="https://github.com/a16z-infra/ai-town/assets/3489963/a4c91f17-23ed-47ec-8c4e-9f9a8505057d">
+<img width="1454" alt="Screen Shot 2023-08-14 at 10 01 00 AM" src="https://github.com/wongcyrus/azure-open-ai-town/assets/Capture.JPG">
 
 
-AI Town is a virtual town where AI characters live, chat and socialize.
+Azure OpenAI 小鎮 is a virtual town where AI characters live, chat and socialize, which a fort of AI Town and in Chinese.
 
 This project is a deployable starter kit for easily building and customizing your own version of AI town. Inspired by the research paper [_Generative Agents: Interactive Simulacra of Human Behavior_](https://arxiv.org/pdf/2304.03442.pdf).
 
@@ -62,9 +62,9 @@ CLERK_SECRET_KEY=sk_***
 - Go to JWT Templates and create a new Convex Template.
 - Copy the JWKS endpoint URL for use below.
 
-b. **OpenAI API key**
+b. **Azure OpenAI API key**
 
-Visit https://platform.openai.com/account/api-keys to get your OpenAI API key if you're using OpenAI for your language model.
+Visit https://learn.microsoft.com/en-us/azure/ai-services/openai/chatgpt-quickstart?tabs=command-line&pivots=programming-language-javascript to get your OpenAI API key if you're using Azure OpenAI for your language model.
 
 c. **Pinecone API keys**
 
@@ -82,7 +82,7 @@ npx convex dashboard
 Go to "settings" and add the following environment varables. `CLERK_ISSUER_URL` should be the URL from the JWKS endpoint.
 
 ```bash
-OPENAI_API_KEY  sk-*******
+AZURE_OPENAI_API_KEY  sk-*******
 CLERK_ISSUER_URL  https://****
 PINECONE_API_KEY  ********
 PINECONE_ENVIRONMENT us****

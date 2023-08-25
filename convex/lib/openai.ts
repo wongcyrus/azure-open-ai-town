@@ -8,8 +8,8 @@ export async function chatCompletion(
   if (!process.env.AZURE_OPENAI_API_KEY) {
     throw new Error(
       'Missing AZURE_OPENAI_API_KEY in environment variables.\n' +
-        'Set it in the project settings in the Convex dashboard:\n' +
-        '    npx convex dashboard\n or https://dashboard.convex.dev',
+      'Set it in the project settings in the Convex dashboard:\n' +
+      '    npx convex dashboard\n or https://dashboard.convex.dev',
     );
   }
 
@@ -52,8 +52,8 @@ export async function fetchEmbeddingBatch(texts: string[]) {
   if (!process.env.AZURE_OPENAI_API_KEY) {
     throw new Error(
       'Missing AZURE_OPENAI_API_KEY in environment variables.\n' +
-        'Set it in the project settings in the Convex dashboard:\n' +
-        '    npx convex dashboard\n or https://dashboard.convex.dev',
+      'Set it in the project settings in the Convex dashboard:\n' +
+      '    npx convex dashboard\n or https://dashboard.convex.dev',
     );
   }
   const {
@@ -61,24 +61,41 @@ export async function fetchEmbeddingBatch(texts: string[]) {
     retries,
     ms,
   } = await retryWithBackoff(async () => {
-    const result = await fetch('https://eastus.api.cognitive.microsoft.com/openai/deployments/text-embedding-ada-002/embeddings?api-version=2023-05-15', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'api-key': process.env.AZURE_OPENAI_API_KEY!,
-      },
+    const getEmbeddings = async (texts: string[]) => {
+      const result = await fetch('https://eastus.api.cognitive.microsoft.com/openai/deployments/text-embedding-ada-002/embeddings?api-version=2023-05-15', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': process.env.AZURE_OPENAI_API_KEY!,
+        },
 
-      body: JSON.stringify({
-        input: texts.map((text) => text.replace(/\n/g, ' ')),
-      }),
-    });
-    if (!result.ok) {
-      throw {
-        retry: result.status === 429 || result.status >= 500,
-        error: new Error(`Embedding failed with code ${result.status}: ${await result.text()}`),
-      };
+        body: JSON.stringify({
+          input: texts.map((text) => text.replace(/\n/g, ' ')),
+        }),
+      });
+      if (!result.ok) {
+        throw {
+          retry: result.status === 429 || result.status >= 500,
+          error: new Error(`Embedding failed with code ${result.status}: ${await result.text()}`),
+        };
+      }
+      return (await result!.json()) as CreateEmbeddingResponse;
+    };
+
+    // split texts into mini batch of 16 and keep it in miniBatch 
+    const batchSize = 16;
+    const jsonBatch = [];
+    for (let i = 0; i < texts.length; i += batchSize) {
+      const miniBatchText = texts.slice(i, i + batchSize);
+      jsonBatch.push(await getEmbeddings(miniBatchText));
     }
-    return (await result!.json()) as CreateEmbeddingResponse;
+    // merge all mini batch into one json
+    const json = jsonBatch.reduce((acc, cur) => {
+      acc.data = acc.data.concat(cur.data);
+      acc.usage.total_tokens += cur.usage.total_tokens;
+      return acc;
+    });
+    return json;
   });
   if (json.data.length !== texts.length) {
     console.error(json);
@@ -216,14 +233,14 @@ export interface CreateChatCompletionRequest {
    * @memberof CreateChatCompletionRequest
    */
   model:
-    | 'gpt-4'
-    | 'gpt-4-0613'
-    | 'gpt-4-32k'
-    | 'gpt-4-32k-0613'
-    | 'gpt-35-turbo'
-    | 'gpt-35-turbo-0613'
-    | 'gpt-35-turbo-16k' // <- our default
-    | 'gpt-35-turbo-16k-0613';
+  | 'gpt-4'
+  | 'gpt-4-0613'
+  | 'gpt-4-32k'
+  | 'gpt-4-32k-0613'
+  | 'gpt-35-turbo'
+  | 'gpt-35-turbo-0613'
+  | 'gpt-35-turbo-16k' // <- our default
+  | 'gpt-35-turbo-16k-0613';
   /**
    * The messages to generate chat completions for, in the chat format:
    * https://platform.openai.com/docs/guides/chat/introduction
