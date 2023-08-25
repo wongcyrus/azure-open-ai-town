@@ -5,8 +5,8 @@ import localFont from 'next/font/local';
 import clsx from 'clsx';
 
 export const metadata = {
-  title: 'AI Town',
-  description: 'A virtual town where AI characters live, chat and socialize',
+  title: 'Azure OpenAI 小鎮',
+  description: '人工智能角色居住、聊天和社交的虛擬小鎮',
 };
 
 const fontDisplay = localFont({

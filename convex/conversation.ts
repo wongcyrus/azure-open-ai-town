@@ -18,7 +18,7 @@ export async function startConversation(
 
   const { embedding } = await fetchEmbeddingWithCache(
     ctx,
-    `What do you think about ${newFriendsNames.join(',')}?`,
+    `你對 ${newFriendsNames.join(',')} 有什麼想法 ?`,
     { write: true },
   );
   const memories = await memory.accessMemories(player.id, embedding);
